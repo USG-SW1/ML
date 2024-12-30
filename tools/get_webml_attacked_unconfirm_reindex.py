@@ -21,62 +21,20 @@ def search_all_documents(index_name, webml_prefix):
                 "index": old_index,
                 "query": {
                   "bool":{
-                    "must":[
-                       {
-                          "exists": {
-                            "field": "user_agent"
+                      "filter": [
+                          {
+                               "match_phrase": {
+                                   "web_ml_type": "Attacked"
+                                   }
+                          },
+                          {
+                            "range": {
+                                 "first_seen_time": {
+                                 "gte": "now-2d",
+                                 "lte": "now-1d"
+                                 }
+                              }
                           }
-                       },
-                       {
-                          "range": {
-                             "first_seen_time": {
-                                "gte": "now-2d",
-                                "lte": "now-1d"
-                             }
-                          }
-                       }
-                      ],
-                      "must_not": [
-                        {
-                          "match_phrase": {
-                            "user_agent": "TheGreenBow-VPNClient/5.0"
-                          }
-                        },
-                        {
-                          "match_phrase": {
-                            "user_agent": "Mozilla"
-                          }
-                        },
-                        {
-                          "match_phrase": {
-                            "user_agent": "Go-http-client/1.1"
-                          }
-                        },
-                        {
-                          "match_phrase": {
-                            "user_agent": "python-requests/2.32.3"
-                          }
-                        },
-                        {
-                          "match_phrase": {
-                            "user_agent": "python-requests/2.26.0"
-                          }
-                        },
-                        {
-                          "match_phrase": {
-                            "user_agent": "python-requests"
-                          }
-                        },
-                        {
-                          "match_phrase": {
-                            "user_agent": "python-httpx"
-                          }
-                        },
-                        {
-                          "match_phrase": {
-                            "user_agent": "SSLVPN-Client/3.0"
-                          }
-                        }
                       ]
                   }
                 }
