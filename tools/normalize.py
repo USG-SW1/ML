@@ -77,7 +77,6 @@ def query_ai_qwen(features):
        severity = comment.split('Attack risk level:')[1].split('\n')[0].strip()
     print(comment)
     print(severity)
-    # 模擬AI的回應
     #comment = 'This is a simulated AI response.'
     # 根據提示詞進行一些簡單的判斷
 
