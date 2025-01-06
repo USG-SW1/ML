@@ -75,6 +75,7 @@ def query_ai_qwen(features):
         #print("aaaaaaa\n")
     if 'Attack risk level:' in comment:
        severity = comment.split('Attack risk level:')[1].split('\n')[0].strip()
+       severity = ''.join(filter(str.isdigit, severity[:2]))
     print(comment)
     print(severity)
     #comment = 'This is a simulated AI response.'
