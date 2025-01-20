@@ -1,4 +1,4 @@
-!/usr/bin/env python3
+#!/usr/bin/env python3
 #from datetime import datetime,timedelta
 import os
 import json
@@ -48,7 +48,7 @@ def update_elasticsearch_index(index_name, target_day, days_num):
     }
 
     #response = es.search(index=index_name, body=query, scroll='2m', size=100)
-    response = es.search(index=index_name, body=query, scroll='10m')
+    response = es.search(index=index_name, body=query, scroll='20m')
     scroll_id = response['_scroll_id']
     hits = response['hits']['hits']
     print("hits = " + str(len(hits)))
@@ -59,11 +59,16 @@ def update_elasticsearch_index(index_name, target_day, days_num):
             source = hit['_source']
             features = source.get('feature_raw', '')
             ai_comment = source.get('ai_comment', '')
+            record_date = source.get('first_seen_time', '')
             print('ai_comment len=' , len(ai_comment))
             print('update _id =' + doc_id)
+            print('date =' + record_date)
             if len(ai_comment) < 12:
                 if features:
+                    start_time = datetime.datetime.now()
                     severity, comment = query_ai_qwen(features)
+                    end_time = datetime.datetime.now()
+                    print(f"query_ai_qwen call duration: {end_time - start_time}")
                     es.update(
                         index=index_name,
                         id=doc_id,
@@ -75,7 +80,11 @@ def update_elasticsearch_index(index_name, target_day, days_num):
                         }
                     )
                     updated = True
-        response = es.scroll(scroll_id=scroll_id, scroll='3m')
+        try:
+            response = es.scroll(scroll_id=scroll_id, scroll='20m')
+        except Exception as e:
+            print(f"Scroll failed: {e}")
+            return updated
         scroll_id = response['_scroll_id']
         hits = response['hits']['hits']
 
@@ -115,7 +124,7 @@ def query_ai_qwen(features):
         "The answer format, Attack risk level: <point>.  And simple comment. No need any code. "
     )
     """
-
+    
     prompt = (
         "Evaluate the given HTTP content for signs of: "
         "1. SQL injection "
@@ -129,16 +138,16 @@ def query_ai_qwen(features):
         "Output format as following, Attack risk level: <level> (DONT contain  **) "
         "And provide Detail comment. (DONOT print 1~8 rule by rule which did not hit.) "
     )
-
+    
     #p= f"prompt + '\n' + features"
     #print(prompt + '\n' + features)
     #os.exit()
     stream = ollama.chat(
-        model='qwen2.5-coder:32b',
+        model='qwen2.5-coder:32b', 
         messages=[{'role': 'user', 'content': prompt + '\n' + features}],
         stream=True
         )
-
+    
     # 取得AI的回應
     severity = 'unknown'
     comment = ''
@@ -188,17 +197,19 @@ if __name__ == "__main__":
     print("Index Name : " + index_name)
     print("Star query day : " + target_day)
     print("number  : " + str(days_num))
-
+    # Clear the file before touching it
+    open('ai_start_scan', 'w').close()
     retries = 0
     max_retries = 10
     updated = update_elasticsearch_index(index_name, target_day, str(days_num))
-
+    
     while updated and retries < max_retries:
         print(f"Update successful, retrying... ({retries + 1}/{max_retries})")
         updated = update_elasticsearch_index(index_name, target_day, str(days_num))
         retries += 1
-
+    
     if retries == max_retries:
         print("Reached maximum retries.")
     else:
-        print("Update completed.")      
+        print("Update completed.")
+        os.remove('ai_start_scan')
