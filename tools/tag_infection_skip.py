@@ -3,8 +3,27 @@ from elasticsearch import Elasticsearch
 #from elasticsearch import RequestConfig
 import sys
 from datetime import datetime
+import json
 
 def search_all_documents(operation, doc_id, rule):
+    """
+    Searches all documents in the Elasticsearch index and updates the infection status based on the provided operation.
+
+    Args:
+      operation (str): The operation to perform. If '+r', sets the infection status to 'fw_should_skip'. Otherwise, sets it to null.
+      doc_id (str): The document ID to search for.
+      rule (str): The rule to apply for the search.
+
+    Returns:
+      dict: The response from the Elasticsearch update_by_query operation.
+
+    Example:
+      >>> res = search_all_documents('+r', '12345', 'some_rule')
+      >>> print(res)
+
+    Note:
+      The `rule.conf` file should contain paths to rule files, each on a new line. Lines starting with '#' are ignored.
+    """
     #old_index = "webml"
     pipeline = "infection-pipeline"
     if operation == '+r':
@@ -27,59 +46,48 @@ def search_all_documents(operation, doc_id, rule):
 
     # print(rules)
     # sys.exit(1)
-    data={
-        "query": {
-          "bool": {
-            "filter": [
-              {
-                "bool": {
-                  "should": [
-                      rule_1,
-                    {
-                      "bool": {
-                        "should": [
-                          {
-                            "match_phrase": {
-                              "message": "The illegal process=\"/etc/ips/system_protection_port_check.pyc\"(/compress/usr/bin/python3.8), has been triggered, cmdline=\"python /etc/ips/system_protection_port_check.pyc\""
-                            }
-                          }
-                        ],
-                        "minimum_should_match": 1
-                      }
-                    }
-                  ],
-                  "minimum_should_match": 1
-                }
-              },
-              {
-                "range": {
-                  "time": {
-                    "format": "strict_date_optional_time",
-                    "gte": "now-3d/d",
-                    "lte": "now"
-                  }
+    # Read rules from files listed in rule.conf
+    rules = []
+    with open('./infection_rules/all_rules.conf', 'r') as rule_conf:
+      combined_rules = []
+      for line in rule_conf:
+        line = line.strip()
+        if line and not line.startswith('#'):
+          with open(line, 'r') as rule_file:
+            rule = json.load(rule_file)
+            combined_rules.append(rule)
+
+    rules = combined_rules
+
+    data = {
+      "query": {
+        "bool": {
+          "filter": [
+            {
+              "bool": {
+                "should": rules,
+                "minimum_should_match": 1
+              }
+            },
+            {
+              "range": {
+                "time": {
+                  "format": "strict_date_optional_time",
+                  "gte": "now-3d/d",
+                  "lte": "now"
                 }
               }
-            ]
-          }
-            },
-              "script": {
-                  "source": ctx_ml_string
-                }
+            }
+          ]
         }
-
+      },
+      "script": {
+        "source": ctx_ml_string
+      }
+    }
+    print(data)
+    sys.exit(1)
     es = Elasticsearch(hosts=["http://localhost:9200"])
-    #es = Elasticsearch(hosts=["http://localhost:9200"], request_config=RequestConfig(connect_timeout=160,socket_timeout=900))
-    #res = es.search(index=old_index, body=)
-    #res = es.reindex(body=)
-    #res = es.count(index=old_index, body=)
-    #res = es.index(index=old_index, body=)
-    #print(res['count'])
-
-    #res = es.update_by_(
-    #res = es.update_by_query(
-    #res = es.index(
-    #res = es.update(
     index_name = "infection"
     res = es.update_by_query(
         index=index_name,
@@ -111,4 +119,4 @@ if __name__ == "__main__":
 
     index_name = sys.argv[1]
     result = search_all_documents(operation, doc_id, rule)
-    print(result)
+    print(result)    
