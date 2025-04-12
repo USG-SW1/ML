@@ -3,11 +3,7 @@
     "should": [
         {
         "match_phrase": {
-<<<<<<< HEAD
-            "message": "The illegal process=\"/etc/ips/system_protection_port_check.pyc\"(/compress/usr/bin/python3.8), has been triggered, cmdline=\"python /etc/ips/system_protection_port_check.pyc\""
-=======
             "message": "The illegal process=\"/etc/ips/system_protection_port_check.pyc\"(/compress/usr/bin/python3.8), has been triggered, cmdline=\"/usr/bin/python /etc/ips/system_protection_port_check.pyc\""
->>>>>>> 9e7c232 ( add infection rules)
             }
         }
     ],
