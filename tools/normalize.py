@@ -7,6 +7,9 @@ import sys
 import datetime
 import ollama
 
+
+ioutput_log = "output.log"
+
 def epoch_to_iso8601(epoch_string):
   """將epoch字串轉換為ISO 8601格式
 
@@ -43,6 +46,7 @@ def query_ai_qwen(features):
     Returns:
         tuple: (severity, comment)
     """
+    """
     prompt = (
         "Here is a http content. Analysis it and provide an attacked levels. "
         "normal: it's a normal content. low: It is an abnormal content, but "
@@ -52,15 +56,57 @@ def query_ai_qwen(features):
         "And simple comment. No need any code."
     )
 
+    prompt = (
+        "Here is a http content. Analysis it and provide an attacked levels. "
+        "1 to 10 points, 1 is low risk and 9 is high risk. "
+        "Give 10 directly, if it hits at least one attacked feature. "
+        "The answer format, Attack risk level: <point>.  And simple comment. No need any code. "
+    )
+
+    prompt = (
+        "Here is a http content. Analysis it and provide an attacked levels. "
+        "1 to 10 points, 1 is low risk and 10 is high risk. "
+        "The answer format, Attack risk level: <point>.  And simple comment. No need any code. "
+    )
+
+    prompt = (
+        "Evaluate the given HTTP content for signs of: "
+        "1. SQL injection "
+        "2. Cross-site scripting (XSS) "
+        "3. Remote code execution (RCE) "
+        "4. Command injection "
+        "5. Malware delivery "
+        "6. Data exfiltration "
+        "7. Denial-of-service (DoS) attacks "
+        "8. Reverse shell establishment Rate the overall threat level on a scale of 1 to 10. "
+        "Output format as following, Attack risk level: <level> then return print Detail comment. DONOT print code."
+    )
+    """
+
+    prompt = (
+        "Evaluate the given HTTP content for signs of: "
+        "1. SQL injection "
+        "2. Cross-site scripting (XSS) "
+        "3. Remote code execution (RCE) "
+        "4. Command injection "
+        "5. Malware delivery "
+        "6. Data exfiltration "
+        "7. Denial-of-service (DoS) attacks "
+        "8. Reverse shell establishment Rate the overall threat level on a scale of 1 to 10. "
+        "Output format as following, Attack risk level: <level> (DONT contain  **) "
+        "And provide Detail comment. (DONOT print safe rule of 1~8) "
+    )
+    return "", ""
+
     #p= f"prompt + '\n' + features"
     #print(prompt + '\n' + features)
     #os.exit()
     stream = ollama.chat(
         model='qwen2.5-coder:32b',
         messages=[{'role': 'user', 'content': prompt + '\n' + features}],
+        options={"temperature":0, "num_ctx":4096},
         stream=True
         )
-
     # 取得AI的回應
     severity = 'unknown'
     comment = ''
@@ -76,8 +122,9 @@ def query_ai_qwen(features):
     if 'Attack risk level:' in comment:
        severity = comment.split('Attack risk level:')[1].split('\n')[0].strip()
        severity = ''.join(filter(str.isdigit, severity[:2]))
-    print(comment)
-    print(severity)
+    #print(comment)
+    #print(severity)
+    # 模擬AI的回應
     #comment = 'This is a simulated AI response.'
     # 根據提示詞進行一些簡單的判斷
 
@@ -85,8 +132,8 @@ def query_ai_qwen(features):
 
 def process_json_files(input_directory, pass_path, pass_date):
     all_data = pd.DataFrame()
-    print("-" + input_directory + "-")
-    print("-" + pass_path + "-")
+    print("index: -" + input_directory + "-")
+    print("raw path: -" + pass_path + "-")
     output_file = "../raw-data/" + input_directory + "/" + pass_path
 
     for filename in os.listdir("../raw-data/" + input_directory + "/" + pass_path):
@@ -126,9 +173,20 @@ def process_json_files(input_directory, pass_path, pass_date):
                     features = row['feature_raw'].split('\n\n', 1)
                     if len(features) > 1:
                         feature_string = features[1]
+                        print("\n\n" + "sn: " + sn)
                         severity, comment = query_ai_qwen(feature_string)
-                        df.at[index, 'severity'] = severity
+                        df.at[index, 'severity'] = None if severity  == 'NULL' else severity
                         df.at[index, 'ai_comment'] = None if comment == 'NULL' else comment
+
+            if input_directory in ["infection", "beta-infection"]:
+                firmware_version = df['firmware']
+                if firmware_version.any() and firmware_version.str.contains(r'\(').any():
+                    major_version = firmware_version.str.extract(r'(\d\.\d{2})')[0]
+                    df['major_version'] = major_version
+                if df['target'].str.endswith('.core.zip').any():
+                    df['daemon'] = df['target'].apply(lambda x: x.split('-')[-1].replace('.core.zip', '') if x.endswith('.core.zip') else None)
+                    #if df['daemon'].notna().any():
+                    #    print(df['target'].values)
 
             df['sn'] = None if sn == 'NULL' else sn
             all_data = pd.concat([all_data, df], ignore_index=True)
@@ -139,7 +197,7 @@ def process_json_files(input_directory, pass_path, pass_date):
 
 if __name__ == "__main__":
     if len(sys.argv) != 4:
-        print("Usage: python normalize.py <webml|infection> <day> <path>")
+        print("Usage: normalize.py <webml|infection> <path> <day> \nex. webml 2025/01/24 2025-01-24")
         sys.exit(1)
 
     ml_type = sys.argv[1]
