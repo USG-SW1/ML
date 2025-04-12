@@ -6,7 +6,13 @@ import pandas as pd
 import sys
 import datetime
 import ollama
+import re
 
+module_path = "./infection_rules"
+
+sys.path.append(module_path)
+
+import infection_rules
 
 ioutput_log = "output.log"
 
@@ -130,6 +136,17 @@ def query_ai_qwen(features):
 
     return severity, comment
 
+def apply_rules(message):
+    # Define the logic for apply_rule function
+    # Replace 'pid=<number>xxxx' and 'ppid=<number>xxxx' with 'pid=xxxx' and 'ppid=xxxx'
+    message = re.sub(r'pid=\d+', 'pid=', message)
+    message = re.sub(r'ppid=\d+', 'ppid=', message)
+    rules = [getattr(infection_rules, f'rule_{i}') for i in range(1, 9)]
+    for rule in rules:
+        if rule(message) == 1:
+            return rule.__name__
+    return 'no_rule_matched'
+
 def process_json_files(input_directory, pass_path, pass_date):
     all_data = pd.DataFrame()
     print("index: -" + input_directory + "-")
@@ -187,6 +204,11 @@ def process_json_files(input_directory, pass_path, pass_date):
                     df['daemon'] = df['target'].apply(lambda x: x.split('-')[-1].replace('.core.zip', '') if x.endswith('.core.zip') else None)
                     #if df['daemon'].notna().any():
                     #    print(df['target'].values)
+                df['apply_rule'] = df['message'].apply(apply_rules)
+                df['apply_rule'] = df['apply_rule'].apply(lambda x: x if x != 'no_rule_matched' else None)
+                df['status'] = df['apply_rule'].apply(lambda x: 'normal' if x else None)
+                if df['apply_rule'].isnull().any():
+                    print("Debug: No rule matched for some messages.")
 
             df['sn'] = None if sn == 'NULL' else sn
             all_data = pd.concat([all_data, df], ignore_index=True)
