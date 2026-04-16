@@ -37,6 +37,48 @@ def epoch_to_iso8601(epoch_string):
   #print("iso: " + iso_time)
   return iso_time
 
+def debug_normalize_tar_gz_filename(filename):
+    """
+    Debug and validate if the filename contains a valid timestamp (YYYYMMDDHHMMSS).
+    Prints debug info about year, month, day, hour, minute, second validity.
+    """
+    import re
+    match = re.match(r'(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\.tar\.gz', filename)
+    if not match:
+        print(f"Debug: Filename does not match expected pattern: {filename}")
+        return False
+    year, month, day, hour, minute, second = map(int, match.groups())
+    from datetime import datetime
+    now = datetime.now()
+    valid = True
+    # Year: should be recent (e.g., within 10 years of now)
+    if not (now.year - 10 <= year <= now.year + 1):
+        print(f"Debug: Invalid year: {year}")
+        valid = False
+    # Month: 1-12
+    if not (1 <= month <= 12):
+        print(f"Debug: Invalid month: {month}")
+        valid = False
+    # Day: 1-31
+    if not (1 <= day <= 31):
+        print(f"Debug: Invalid day: {day}")
+        valid = False
+    # Hour: 0-23 (not 1-12, should be 24-hour format)
+    if not (0 <= hour <= 23):
+        print(f"Debug: Invalid hour: {hour}")
+        valid = False
+    # Minute: 0-59
+    if not (0 <= minute <= 59):
+        print(f"Debug: Invalid minute: {minute}")
+        valid = False
+    # Second: 0-59
+    if not (0 <= second <= 59):
+        print(f"Debug: Invalid second: {second}")
+        valid = False
+    if valid:
+        print(f"Debug: Valid timestamp in filename: {filename}")
+    return valid
+
 def custom_function(x):
     str_epoch = f"{epoch_to_iso8601(x)}"
     # 在這裡可以進行更複雜的計算或判斷
@@ -123,7 +165,7 @@ def query_ai_qwen(features):
         #    severity = response_content.split('Attack risk level:')[1].split('.')[0].strip()
         comment = comment + response_content
         #print(response_content)
-        print(response['message']['content'], end='', flush=True)
+        #print(response['message']['content'], end='', flush=True)
         #print("aaaaaaa\n")
     if 'Attack risk level:' in comment:
        severity = comment.split('Attack risk level:')[1].split('\n')[0].strip()
@@ -141,25 +183,68 @@ def apply_rules(message):
     # Replace 'pid=<number>xxxx' and 'ppid=<number>xxxx' with 'pid=xxxx' and 'ppid=xxxx'
     message = re.sub(r'pid=\d+', 'pid=', message)
     message = re.sub(r'ppid=\d+', 'ppid=', message)
-    rules = [getattr(infection_rules, f'rule_{i}') for i in range(1, 9)]
+    # Remove IP addresses from the message
+    message = re.sub(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', '', message)
+    # Remove port numbers in the format 'tune0 <number> <number>'
+    message = re.sub(r'(tun0\s+)\d+\s+\d+', r'\1', message)
+    # Remove timestamps in the format 'Mar 20 23:35:09'
+    message = re.sub(r'\b[A-Za-z]{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\b', '', message)
+    # Normalize tar.gz filename and pid/ppid in the message (buffer only)
+    message = re.sub(r'(/etc/zyxel/ftp/tmp/system_monitor/)\d{8}\d{6}(\.tar\.gz\(CREATE\))', r'\1validtimestamp\2', message)
+    message = re.sub(r'(cmdline="[^"]*/etc/zyxel/ftp/tmp/system_monitor/)\d{8}\d{6}(\.tar\.gz)', r'\1validtimestamp\2', message)
+
+    patterns_to_remove = [
+        'usgflex50h', 'usgflex700h', 'usgflex500h', 'usgflex100h', 'usgflex200h', 'usgflex200hp',
+        'USG FLEX 700H', 'USG FLEX 100H', 'USG FLEX 200HP',
+        '1.30(ABXE.0)', '1.30(ABXE.1)', '1.30(ABZI.0)',
+        '1.31(ABZI.0)', '1.31(ABXF.0)', '1.31(ABXE.0)',
+        '1.09(ABZI.0)', '1.09(ABXF.0)', '1.09(ABXE.0)'
+    ]
+    for pattern in patterns_to_remove:
+        message = message.replace(pattern, '')
+    #print(f"Debug: Message after removing IP addresses and port numbers: {message}")
+    # Check for tar.gz pattern and print normalized filename if matched
+    tar_gz_pattern = r"/etc/zyxel/ftp/tmp/system_monitor/(\d{14})\.tar\.gz"
+    match = re.search(tar_gz_pattern, message)
+    if match:
+        filename = match.group(0).split('/')[-1]
+        normalized = debug_normalize_tar_gz_filename(filename)
+        #print(f"Debug: Matched tar.gz file. Normalized filename: {normalized}")
+
+    # Check all rules from rule_1 to rule_20
+    rules = [getattr(infection_rules, f'rule_{i}') for i in range(1, 21)]
     for rule in rules:
         if rule(message) == 1:
+            #print(f"Debug: Matched rule: {rule.__name__} for message: {message}")
             return rule.__name__
     return 'no_rule_matched'
+
 
 def process_json_files(input_directory, pass_path, pass_date):
     all_data = pd.DataFrame()
     print("index: -" + input_directory + "-")
     print("raw path: -" + pass_path + "-")
     output_file = "../raw-data/" + input_directory + "/" + pass_path
+    daemon_mapping = {
+         "cli": "nc-cli",
+         "serve": "netopeer2-serve",
+         "systemd": "charon-systemd",
+         "ch": "connectivity-ch",
+         "rte:2": "fp-rte",
+         "rte:3": "fp-rte",
+         "journal": "systemd-journal",
+         "ctrl": "restart-ctrl",
+         "Main": "Suricata-Main",
+         "network": "systemd-network"
+    }
 
     for filename in os.listdir("../raw-data/" + input_directory + "/" + pass_path):
-        print(filename)
+        #print(filename)
         if filename[0] != 'S' or '-' not in filename:
             sn = 'NULL'
         else:
             sn = filename.split('-')[0]
-        print("sn: " + sn)
+        #print("sn: " + sn)
 
         if filename.endswith('.json') and filename != os.path.basename(output_file):
             filepath = os.path.join(output_file, filename)
@@ -194,21 +279,48 @@ def process_json_files(input_directory, pass_path, pass_date):
                         severity, comment = query_ai_qwen(feature_string)
                         df.at[index, 'severity'] = None if severity  == 'NULL' else severity
                         df.at[index, 'ai_comment'] = None if comment == 'NULL' else comment
+                        # Add input validation and error handling
+                        except Exception as e:
+                            print(f"Error processing AI response: {e}")
+                            df.at[index, 'severity'] = None
+                            df.at[index, 'ai_comment'] = None
 
             if input_directory in ["infection", "beta-infection"]:
                 firmware_version = df['firmware']
+
                 if firmware_version.any() and firmware_version.str.contains(r'\(').any():
                     major_version = firmware_version.str.extract(r'(\d\.\d{2})')[0]
                     df['major_version'] = major_version
                 if df['target'].str.endswith('.core.zip').any():
-                    df['daemon'] = df['target'].apply(lambda x: x.split('-')[-1].replace('.core.zip', '') if x.endswith('.core.zip') else None)
-                    #if df['daemon'].notna().any():
-                    #    print(df['target'].values)
-                df['apply_rule'] = df['message'].apply(apply_rules)
+                    def extract_daemon_from_target(x):
+                        if not x.endswith('.core.zip'):
+                            return None
+                        filename = x.split('/')[-1]
+                        if len(filename) > 25 and filename[25] == '#':
+                            # New format: YYMMDD-HHMMSS_version_model#daemonname#offset.core.zip
+                            return filename.split('#')[1]
+                        else:
+                            # Old format: something-daemonname.core.zip
+                            return filename.split('-')[-1].replace('.core.zip', '')
+                    df['daemon'] = df['target'].apply(extract_daemon_from_target)
+                    # Apply mapping or keep original
+                    df['daemon'] = df['daemon'].apply(lambda x: daemon_mapping.get(x, x))
+                # Do NOT overwrite the original 'message' and 'target' fields
+                # Instead, create normalized versions only for rule matching
+                def normalize_message_field(message):
+                    # Normalize tar.gz filename and pid/ppid in the message
+                    message_norm = re.sub(r'(/etc/zyxel/ftp/tmp/system_monitor/)\d{8}\d{6}(\.tar\.gz\(CREATE\))', r'\1validtimestamp\2', message)
+                    message_norm = re.sub(r'(cmdline="[^"]*/etc/zyxel/ftp/tmp/system_monitor/)\d{8}\d{6}(\.tar\.gz)', r'\1validtimestamp\2', message_norm)
+                    return message_norm
+                df['message_normalized'] = df['message'].apply(normalize_message_field)
+                #if df['daemon'].notna().any():
+                #    print(df['target'].values)
+                df['apply_rule'] = df['message_normalized'].apply(apply_rules)
                 df['apply_rule'] = df['apply_rule'].apply(lambda x: x if x != 'no_rule_matched' else None)
                 df['status'] = df['apply_rule'].apply(lambda x: 'normal' if x else None)
                 if df['apply_rule'].isnull().any():
                     print("Debug: No rule matched for some messages.")
+    
 
             df['sn'] = None if sn == 'NULL' else sn
             all_data = pd.concat([all_data, df], ignore_index=True)
