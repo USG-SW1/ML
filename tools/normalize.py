@@ -280,10 +280,10 @@ def process_json_files(input_directory, pass_path, pass_date):
                         df.at[index, 'severity'] = None if severity  == 'NULL' else severity
                         df.at[index, 'ai_comment'] = None if comment == 'NULL' else comment
                         # Add input validation and error handling
-                        except Exception as e:
-                            print(f"Error processing AI response: {e}")
-                            df.at[index, 'severity'] = None
-                            df.at[index, 'ai_comment'] = None
+                        #except Exception as e:
+                        #    print(f"Error processing AI response: {e}")
+                        #    df.at[index, 'severity'] = None
+                        #    df.at[index, 'ai_comment'] = None
 
             if input_directory in ["infection", "beta-infection"]:
                 firmware_version = df['firmware']
@@ -319,7 +319,8 @@ def process_json_files(input_directory, pass_path, pass_date):
                 df['apply_rule'] = df['apply_rule'].apply(lambda x: x if x != 'no_rule_matched' else None)
                 df['status'] = df['apply_rule'].apply(lambda x: 'normal' if x else None)
                 if df['apply_rule'].isnull().any():
-                    print("Debug: No rule matched for some messages.")
+                    print('.', end='', flush=True)
+                    #print("Debug: No rule matched for some messages.")
     
 
             df['sn'] = None if sn == 'NULL' else sn
